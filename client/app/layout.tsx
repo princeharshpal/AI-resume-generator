@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono, Figtree } from "next/font/google";
 import "./globals.css";
 import { cn } from "@/lib/utils";
+import Header from "@/components/Header";
+import { AuthProvider } from "@/context/AuthContext";
+import AuthModal from "@/components/AuthModal";
 
 const figtree = Figtree({ subsets: ["latin"], variable: "--font-sans" });
 
@@ -17,7 +20,8 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "SmartResume AI - Tailor Your Resume for Your Dream Job",
-  description: "Get instant ATS score, missing skills analysis, and a customized resume for full stack developer roles.",
+  description:
+    "Get instant ATS score, missing skills analysis, and a customized resume for full stack developer roles.",
 };
 
 export default function RootLayout({
@@ -29,16 +33,20 @@ export default function RootLayout({
     <html
       lang="en"
       className={cn(
-        "h-full",
-        "antialiased",
+        "h-full antialiased font-sans",
         geistSans.variable,
         geistMono.variable,
-        "font-sans",
-        figtree.variable
+        figtree.variable,
       )}
     >
       <body className="min-h-full flex flex-col antialiased selection:bg-primary/20 selection:text-primary">
-        {children}
+        <AuthProvider>
+          <Header />
+          <div className="flex-1 bg-gradient-to-b from-background via-background to-muted/20 text-foreground pb-20">
+            {children}
+          </div>
+          <AuthModal />
+        </AuthProvider>
       </body>
     </html>
   );

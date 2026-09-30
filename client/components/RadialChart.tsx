@@ -10,7 +10,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 
 interface RadialChartProps {
   score?: number;
@@ -31,14 +30,12 @@ export default function RadialChart({
     formatting: 91,
   },
 }: RadialChartProps) {
-  // SVG circular gauge calculation
-  const radius = 64;
-  const strokeWidth = 12;
+  const radius = 92;
+  const strokeWidth = 14;
   const normalizedRadius = radius - strokeWidth / 2;
   const circumference = 2 * Math.PI * normalizedRadius;
   const strokeDashoffset = circumference - (score / 100) * circumference;
 
-  // Determine color theme based on score
   const isGood = score >= 80;
   const isModerate = score >= 65 && score < 80;
 
@@ -47,12 +44,6 @@ export default function RadialChart({
     : isModerate
       ? "text-amber-500 stroke-amber-500"
       : "text-rose-500 stroke-rose-500";
-
-  const badgeVariant = isGood
-    ? "default"
-    : isModerate
-      ? "secondary"
-      : "destructive";
 
   return (
     <Card className="flex flex-col h-full border border-border/80 shadow-sm bg-card/70 backdrop-blur-sm overflow-hidden">
@@ -70,25 +61,22 @@ export default function RadialChart({
         </CardDescription>
       </CardHeader>
 
-      <CardContent className="flex-1 flex flex-col items-center justify-center py-3">
-        {/* Radial Gauge */}
-        <div className="relative flex items-center justify-center">
+      <CardContent className="flex-1 flex flex-col items-center justify-center p-6 pt-2">
+        <div className="relative flex items-center justify-center py-2">
           <svg
             height={radius * 2 + strokeWidth}
             width={radius * 2 + strokeWidth}
             className="transform -rotate-90 transition-all duration-1000 ease-out drop-shadow-sm"
           >
-            {/* Background Track */}
             <circle
               stroke="currentColor"
               fill="transparent"
               strokeWidth={strokeWidth}
-              className="text-muted/40 dark:text-muted/20"
+              className="text-muted/25 dark:text-muted/20"
               r={normalizedRadius}
               cx={radius + strokeWidth / 2}
               cy={radius + strokeWidth / 2}
             />
-            {/* Active Gauge Progress */}
             <circle
               fill="transparent"
               strokeWidth={strokeWidth}
@@ -102,55 +90,61 @@ export default function RadialChart({
             />
           </svg>
 
-          {/* Center Content */}
-          <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-            <span className="text-4xl font-extrabold tracking-tight font-heading">
-              {score}
-              <span className="text-xl font-bold text-muted-foreground">%</span>
-            </span>
-            <Badge
-              variant={badgeVariant}
-              className={`mt-1 text-xs font-semibold px-2.5 py-0.5 ${
-                isModerate
-                  ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30"
-                  : ""
+          <div className="absolute inset-0 flex flex-col items-center justify-center text-center select-none pointer-events-none p-6">
+            <div className="flex items-baseline justify-center">
+              <span className="text-3xl sm:text-4xl font-black tracking-tight text-foreground font-heading">
+                {score}
+              </span>
+              <span className="text-lg sm:text-xl font-bold text-muted-foreground/80 ml-0.5">
+                %
+              </span>
+            </div>
+
+            <div
+              className={`mt-2 inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-bold border transition-all ${
+                isGood
+                  ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                  : isModerate
+                    ? "bg-amber-500/10 text-amber-600 dark:text-amber-500 border-amber-500/30"
+                    : "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30"
               }`}
             >
-              {isModerate ? (
-                <AlertCircle className="w-3 h-3 mr-1 text-amber-500" />
+              {isGood ? (
+                <CheckCircle2 className="size-3 text-emerald-500 shrink-0" />
               ) : (
-                <CheckCircle2 className="w-3 h-3 mr-1 text-emerald-500" />
+                <AlertCircle className="size-3 text-amber-500 shrink-0" />
               )}
-              {statusText}
-            </Badge>
+              <span>{statusText}</span>
+            </div>
           </div>
         </div>
 
-        {/* Sub-scores breakdown */}
-        <div className="w-full mt-5 grid grid-cols-3 gap-2 pt-4 border-t border-border/60 text-center">
-          <div className="px-1 py-1 rounded-lg bg-muted/40">
-            <div className="text-[11px] text-muted-foreground font-medium">
+        <div className="w-full border-t border-border/50 my-4" />
+
+        <div className="w-full grid grid-cols-3 gap-2.5 text-center">
+          <div className="p-3 rounded-2xl bg-muted/35 dark:bg-muted/20 border border-border/50 shadow-xs flex flex-col items-center justify-center">
+            <span className="text-xs text-muted-foreground font-medium">
               Keywords
-            </div>
-            <div className="text-sm font-bold text-foreground">
+            </span>
+            <span className="text-base sm:text-lg font-black text-foreground mt-0.5">
               {subscores.keywords}%
-            </div>
+            </span>
           </div>
-          <div className="px-1 py-1 rounded-lg bg-muted/40">
-            <div className="text-[11px] text-muted-foreground font-medium">
+          <div className="p-3 rounded-2xl bg-muted/35 dark:bg-muted/20 border border-border/50 shadow-xs flex flex-col items-center justify-center">
+            <span className="text-xs text-muted-foreground font-medium">
               Experience
-            </div>
-            <div className="text-sm font-bold text-foreground">
+            </span>
+            <span className="text-base sm:text-lg font-black text-foreground mt-0.5">
               {subscores.experience}%
-            </div>
+            </span>
           </div>
-          <div className="px-1 py-1 rounded-lg bg-muted/40">
-            <div className="text-[11px] text-muted-foreground font-medium">
+          <div className="p-3 rounded-2xl bg-muted/35 dark:bg-muted/20 border border-border/50 shadow-xs flex flex-col items-center justify-center">
+            <span className="text-xs text-muted-foreground font-medium">
               ATS Format
-            </div>
-            <div className="text-sm font-bold text-foreground">
+            </span>
+            <span className="text-base sm:text-lg font-black text-foreground mt-0.5">
               {subscores.formatting}%
-            </div>
+            </span>
           </div>
         </div>
       </CardContent>
