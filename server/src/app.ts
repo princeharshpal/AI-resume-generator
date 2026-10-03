@@ -3,14 +3,15 @@ dotenv.config();
 
 import express from "express";
 import cors from "cors";
+import helmet from "helmet";
+import cookieParser from "cookie-parser";
+import compression from "compression";
+import morgan from "morgan";
 
 import userRoutes from "./routes/user.routes";
 import { globalRateLimiter } from "./middlewares/rateLimiter.middleware";
-import helmet from "helmet";
-import compression from "compression";
-import morgan from "morgan";
-import cookieParser from "cookie-parser";
 import errorHandler, { notFoundHandler } from "./middlewares/error.middleware";
+import uploadRoutes from "./routes/upload.routes";
 
 const app = express();
 
@@ -28,6 +29,7 @@ app.use(express.urlencoded({ extended: true, limit: "40kb" }));
 
 app.get("/", (req, res) => {
   res.json({
+    status: 200,
     message: `Backend is running | ${new Date()}`,
   });
 });
@@ -35,6 +37,8 @@ app.get("/", (req, res) => {
 app.use("/api/users", userRoutes);
 
 app.use("/api/analyse-resume", userRoutes);
+
+app.use("/api/upload", uploadRoutes);
 
 app.use(notFoundHandler);
 

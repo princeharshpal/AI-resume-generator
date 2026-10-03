@@ -10,7 +10,7 @@
     "module": "ESNext",
     "target": "ESNext",
     "moduleResolution": "bundler",
-    "types": ["node"],
+    "types": ["node", "multer"],
     // "types": [],
     // For nodejs:
     // "lib": ["esnext"],

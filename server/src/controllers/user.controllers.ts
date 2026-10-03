@@ -112,8 +112,6 @@ const refreshToken = AsyncWrapper(async (req: Request, res: Response) => {
 
   if (!incomingRefreshToken) throw new ApiError(401, "Unauthorized request");
 
-  console.log("token", incomingRefreshToken);
-
   let decoded: TokenPayload;
   try {
     decoded = jwt.verify(
@@ -123,8 +121,7 @@ const refreshToken = AsyncWrapper(async (req: Request, res: Response) => {
   } catch (error) {
     throw new ApiError(401, "Invalid or expired refresh token");
   }
-  
-  console.log(decoded);
+
   if (!decoded?.user_id) throw new ApiError(401, "Invalid token payload");
 
   const isTokenValid = await pool.query(
