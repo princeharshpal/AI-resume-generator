@@ -1,16 +1,9 @@
 import { Router } from "express";
-import { uploadFile } from "../controllers/upload.controllers";
-import { uploadSingleFile } from "../middlewares/multer.middleware";
-import { validateFile } from "../middlewares/validator.middleware";
-import { uploadPdfSchema } from "../schemas/upload.schemas";
+import upload from "../config/multer";
+import { uploadResumeToGoogle } from "../controllers/upload.controllers";
 
 const router = Router();
 
-router.post(
-  "/",
-  uploadSingleFile("file"),
-  validateFile(uploadPdfSchema),
-  uploadFile,
-);
+router.post("/", upload.single("resume"), uploadResumeToGoogle);
 
 export default router;

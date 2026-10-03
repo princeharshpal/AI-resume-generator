@@ -1,13 +1,7 @@
-import multer, { memoryStorage, MulterError } from "multer";
+import { MulterError } from "multer";
 import type { Request, Response, NextFunction } from "express";
 import ApiError from "../utils/ApiError";
-
-const upload = multer({
-  storage: memoryStorage(),
-  limits: {
-    fileSize: 10 * 1024 * 1024,
-  },
-});
+import upload from "../config/multer";
 
 const uploadSingleFile = (fieldName: string = "file") => {
   const singleMiddleware = upload.single(fieldName);
@@ -27,4 +21,4 @@ const uploadSingleFile = (fieldName: string = "file") => {
   };
 };
 
-export { upload, uploadSingleFile };
+export { uploadSingleFile };

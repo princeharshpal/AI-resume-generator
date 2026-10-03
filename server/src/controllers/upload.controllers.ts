@@ -1,42 +1,37 @@
 import type { Request, Response } from "express";
-import cloudinary from "../config/cloudinary";
 import AsyncWrapper from "../utils/asyncWrapper";
-import ApiError from "../utils/ApiError";
+import { ai } from "../config/gemini";
 
-const uploadFile = AsyncWrapper(async (req: Request, res: Response) => {
-  const file = req.file;
-
-  if (!file) {
-    throw new ApiError(400, "PDF file is required");
-  }
-
-  const result = await new Promise((resolve, reject) => {
-    const uploadStream = cloudinary.uploader.upload_stream(
-      {
-        folder: "temp_uploads",
-        resource_type: "auto",
-      },
-      (error, uploadResult) => {
-        if (error) {
-          return reject(
-            new ApiError(500, error.message || "Cloudinary upload failed"),
-          );
-        }
-        resolve(uploadResult);
-      },
-    );
-
-    const chunkSize = 64 * 1024;
-    for (let i = 0; i < file.buffer.length; i += chunkSize) {
-      uploadStream.write(file.buffer.subarray(i, i + chunkSize));
+const uploadResumeToGoogle = AsyncWrapper(
+  async (req: Request, res: Response) => {
+    if (!req.file) {
+      return res
+        .status(400)
+        .json({ success: false, message: "PDF is required" });
     }
-    uploadStream.end();
-  });
 
-  return res.status(200).json({
-    message: "File uploaded successfully",
-    data: result,
-  });
-});
+    const fileBlob = new Blob([new Uint8Array(req.file.buffer)], {
+      type: req.file.mimetype,
+    });
 
-export { uploadFile };
+    const uploadResult = await ai.files.upload({
+      file: fileBlob,
+      config: {
+        mimeType: req.file.mimetype,
+        displayName: req.file.originalname,
+      },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Resume uploaded successfully",
+      data: {
+        file_name: uploadResult.name,
+        file_uri: uploadResult.uri,
+        display_name: uploadResult.displayName,
+      },
+    });
+  },
+);
+
+export { uploadResumeToGoogle };

@@ -12,6 +12,7 @@ import userRoutes from "./routes/user.routes";
 import { globalRateLimiter } from "./middlewares/rateLimiter.middleware";
 import errorHandler, { notFoundHandler } from "./middlewares/error.middleware";
 import uploadRoutes from "./routes/upload.routes";
+import resumeRoutes from "./routes/resume.routes";
 
 const app = express();
 
@@ -35,10 +36,8 @@ app.get("/", (req, res) => {
 });
 
 app.use("/api/users", userRoutes);
-
-app.use("/api/analyse-resume", userRoutes);
-
 app.use("/api/upload", uploadRoutes);
+app.use("/api/resume", resumeRoutes);
 
 app.use(notFoundHandler);
 
