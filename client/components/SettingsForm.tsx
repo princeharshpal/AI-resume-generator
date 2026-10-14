@@ -19,7 +19,7 @@ const settingsSchema = z.object({
     .max(100, "Threshold cannot exceed 100%"),
 });
 
-type SettingsFormData = z.infer<typeof settingsSchema>;
+import type { SettingsFormData } from "@/types";
 
 export default function SettingsForm() {
   const { isLoggedIn, openAuthModal } = useAuth();
@@ -31,7 +31,7 @@ export default function SettingsForm() {
     handleSubmit,
     formState: { errors },
   } = useForm<SettingsFormData>({
-    resolver: zodResolver(settingsSchema),
+    resolver: zodResolver(settingsSchema) as any,
     defaultValues: {
       threshold: 80,
     },

@@ -24,7 +24,12 @@ app.use(compression());
 app.use(helmet());
 app.use(globalRateLimiter);
 app.use(cookieParser());
-app.use(cors());
+app.use(
+  cors({
+    origin: true,
+    credentials: true,
+  }),
+);
 app.use(express.json({ limit: "40kb" }));
 app.use(express.urlencoded({ extended: true, limit: "40kb" }));
 

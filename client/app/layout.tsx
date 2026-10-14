@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import Header from "@/components/Header";
 import { AuthProvider } from "@/context/AuthContext";
 import AuthModal from "@/components/AuthModal";
+import { Toaster } from "@/components/ui/toast";
 
 const figtree = Figtree({ subsets: ["latin"], variable: "--font-sans" });
 
@@ -46,6 +47,7 @@ export default function RootLayout({
             {children}
           </div>
           <AuthModal />
+          <Toaster />
         </AuthProvider>
       </body>
     </html>

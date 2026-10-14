@@ -1,47 +1,59 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect } from "react";
+import type { User, AuthContextType } from "@/types";
+import { refreshTokenApi } from "@/services/apiServices";
 
-interface User {
-  name: string;
-  email: string;
-  avatar?: string;
-}
-
-interface AuthContextType {
-  user: User | null;
-  isLoggedIn: boolean;
-  login: (email?: string, name?: string) => void;
-  logout: () => void;
-  isAuthModalOpen: boolean;
-  openAuthModal: (callback?: () => void) => void;
-  closeAuthModal: () => void;
-}
+export type { User };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const [pendingCallback, setPendingCallback] = useState<(() => void) | null>(null);
+  const [pendingCallback, setPendingCallback] = useState<(() => void) | null>(
+    null,
+  );
 
   useEffect(() => {
     const saved = localStorage.getItem("smartresume_user");
     if (saved) {
       try {
-        setUser(JSON.parse(saved));
+        const parsedUser = JSON.parse(saved);
+        setUser(parsedUser);
+
+        refreshTokenApi()
+          .then((res) => {
+            if (res?.user) {
+              const updatedUser = {
+                ...parsedUser,
+                ...res.user,
+              };
+              setUser(updatedUser);
+              localStorage.setItem(
+                "smartresume_user",
+                JSON.stringify(updatedUser),
+              );
+            }
+          })
+          .catch(() => {});
       } catch {
         localStorage.removeItem("smartresume_user");
       }
     }
+
+    const handleSessionExpired = () => {
+      setUser(null);
+      localStorage.removeItem("smartresume_user");
+    };
+
+    window.addEventListener("auth:session-expired", handleSessionExpired);
+    return () => {
+      window.removeEventListener("auth:session-expired", handleSessionExpired);
+    };
   }, []);
 
-  const login = (email = "harsh@example.com", name = "Harsh Pal") => {
-    const newUser = {
-      name,
-      email,
-      avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80",
-    };
+  const setAuthenticatedUser = (newUser: User) => {
     setUser(newUser);
     localStorage.setItem("smartresume_user", JSON.stringify(newUser));
     setIsAuthModalOpen(false);
@@ -50,6 +62,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       pendingCallback();
       setPendingCallback(null);
     }
+  };
+
+  const login = (
+    emailOrUser: string | User = "harsh@example.com",
+    name = "Harsh Pal",
+  ) => {
+    if (typeof emailOrUser === "object" && emailOrUser !== null) {
+      setAuthenticatedUser(emailOrUser);
+      return;
+    }
+
+    const newUser: User = {
+      name,
+      email: emailOrUser,
+      avatar:
+        "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80",
+    };
+    setAuthenticatedUser(newUser);
   };
 
   const logout = () => {
@@ -77,6 +107,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user,
         isLoggedIn: !!user,
         login,
+        setAuthenticatedUser,
         logout,
         isAuthModalOpen,
         openAuthModal,

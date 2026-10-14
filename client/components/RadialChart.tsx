@@ -11,15 +11,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
-interface RadialChartProps {
-  score?: number;
-  statusText?: string;
-  subscores?: {
-    keywords: number;
-    experience: number;
-    formatting: number;
-  };
-}
+import type { RadialChartProps } from "@/types";
 
 export default function RadialChart({
   score = 78,

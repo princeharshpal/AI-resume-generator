@@ -4,25 +4,47 @@ import React, { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { X, Lock, Mail, User, Sparkles, ArrowRight } from "lucide-react";
+import {
+  X,
+  Lock,
+  Mail,
+  User,
+  Sparkles,
+  ArrowRight,
+  AlertCircle,
+  CheckCircle2,
+} from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { loginApi, registerApi } from "@/services/apiServices";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 
 const authSchema = z.object({
   name: z.string().optional(),
   email: z
     .string()
+    .trim()
     .min(1, "Email is required")
-    .email("Please enter a valid email address"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
+    .email("Please enter a valid email address")
+    .toLowerCase(),
+  password: z
+    .string()
+    .min(6, "Password must be at least 6 characters long")
+    .regex(
+      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/,
+      "Must contain at least 1 uppercase letter, 1 lowercase letter, and 1 number",
+    ),
 });
 
-type AuthFormData = z.infer<typeof authSchema>;
+import type { AuthFormData } from "@/types";
 
 export default function AuthModal() {
-  const { isAuthModalOpen, closeAuthModal, login } = useAuth();
+  const { isAuthModalOpen, closeAuthModal, setAuthenticatedUser } = useAuth();
   const [isSignUp, setIsSignUp] = useState(false);
+  const [authLoading, setAuthLoading] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const {
     register,
@@ -41,23 +63,92 @@ export default function AuthModal() {
 
   if (!isAuthModalOpen) return null;
 
-  const onSubmit = (data: AuthFormData) => {
-    if (isSignUp && (!data.name || data.name.trim().length < 2)) {
-      setError("name", { message: "Name must be at least 2 characters" });
+  const onSubmit = async (data: AuthFormData) => {
+    setApiError(null);
+    setSuccessMessage(null);
+
+    if (isSignUp && (!data.name || data.name.trim().length < 3)) {
+      setError("name", {
+        message: "Name must be at least 3 characters long",
+      });
       return;
     }
 
-    login(data.email, data.name || data.email.split("@")[0]);
-    reset();
-  };
+    setAuthLoading(true);
 
-  const handleDemoLogin = () => {
-    login("demo.user@example.com", "Demo User");
-    reset();
+    try {
+      if (isSignUp) {
+        await registerApi({
+          name: data.name!.trim(),
+          email: data.email.trim(),
+          password: data.password,
+        });
+
+        // Automatically log the user in after successful registration
+        const loginRes = await loginApi({
+          email: data.email.trim(),
+          password: data.password,
+        });
+
+        if (loginRes?.user) {
+          setAuthenticatedUser({
+            id: loginRes.user.id,
+            name: loginRes.user.name,
+            email: loginRes.user.email,
+          });
+          reset();
+        } else {
+          setSuccessMessage("Account created successfully! Please sign in.");
+          setIsSignUp(false);
+        }
+      } else {
+        const loginRes = await loginApi({
+          email: data.email.trim(),
+          password: data.password,
+        });
+
+        if (loginRes?.user) {
+          setAuthenticatedUser({
+            id: loginRes.user.id,
+            name: loginRes.user.name,
+            email: loginRes.user.email,
+          });
+          reset();
+        } else {
+          throw new Error(loginRes?.message || "Login failed");
+        }
+      }
+    } catch (err: unknown) {
+      console.error("Auth error:", err);
+      const resData =
+        err && typeof err === "object" && "response" in err
+          ? (
+              err as {
+                response?: {
+                  data?: {
+                    message?: string;
+                    errors?: { message: string }[];
+                  };
+                };
+              }
+            ).response?.data
+          : null;
+
+      const message =
+        resData?.message ||
+        resData?.errors?.[0]?.message ||
+        (err instanceof Error ? err.message : "Authentication failed");
+
+      setApiError(message);
+    } finally {
+      setAuthLoading(false);
+    }
   };
 
   const handleToggleMode = () => {
     setIsSignUp(!isSignUp);
+    setApiError(null);
+    setSuccessMessage(null);
     reset();
   };
 
@@ -75,7 +166,7 @@ export default function AuthModal() {
               </h3>
               <p className="text-xs text-muted-foreground">
                 {isSignUp
-                  ? "Sign up to analyze your resumes"
+                  ? "Sign up to analyze and optimize your resumes"
                   : "Please log in to analyze and match your resume"}
               </p>
             </div>
@@ -90,16 +181,31 @@ export default function AuthModal() {
         </div>
 
         <form onSubmit={handleSubmit(onSubmit)} className="p-6 space-y-4">
+          {apiError && (
+            <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-600 dark:text-rose-400 text-xs flex items-center gap-2">
+              <AlertCircle className="size-4 shrink-0" />
+              <span className="font-medium">{apiError}</span>
+            </div>
+          )}
+
+          {successMessage && (
+            <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-xs flex items-center gap-2">
+              <CheckCircle2 className="size-4 shrink-0" />
+              <span className="font-medium">{successMessage}</span>
+            </div>
+          )}
+
           {isSignUp && (
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-foreground">
-                Name
+                Full Name
               </label>
               <div className="relative">
                 <Input
                   type="text"
-                  placeholder="Your Name"
+                  placeholder="Harsh Pal"
                   className="pl-9"
+                  disabled={authLoading}
                   {...register("name")}
                 />
                 <User className="size-4 text-muted-foreground absolute left-3 top-3 pointer-events-none" />
@@ -121,6 +227,7 @@ export default function AuthModal() {
                 type="email"
                 placeholder="you@example.com"
                 className="pl-9"
+                disabled={authLoading}
                 {...register("email")}
               />
               <Mail className="size-4 text-muted-foreground absolute left-3 top-3 pointer-events-none" />
@@ -141,6 +248,7 @@ export default function AuthModal() {
                 type="password"
                 placeholder="••••••••"
                 className="pl-9"
+                disabled={authLoading}
                 {...register("password")}
               />
               <Lock className="size-4 text-muted-foreground absolute left-3 top-3 pointer-events-none" />
@@ -150,39 +258,40 @@ export default function AuthModal() {
                 {errors.password.message}
               </p>
             )}
-          </div>
-
-          <Button type="submit" className="w-full font-bold gap-2">
-            <span>
-              {isSignUp ? "Sign Up & Continue" : "Sign In & Continue"}
-            </span>
-            <ArrowRight className="size-4" />
-          </Button>
-
-          <div className="relative my-3">
-            <div className="absolute inset-0 flex items-center">
-              <span className="w-full border-t border-border" />
-            </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-card px-2 text-muted-foreground">Or</span>
-            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Must be 6+ chars, with 1 uppercase, 1 lowercase & 1 number
+            </p>
           </div>
 
           <Button
-            type="button"
-            variant="outline"
-            onClick={handleDemoLogin}
-            className="w-full text-xs"
+            type="submit"
+            disabled={authLoading}
+            className="w-full font-bold gap-2 cursor-pointer"
           >
-            One-Click Demo Sign In
+            {authLoading ? (
+              <span className="flex items-center gap-2">
+                <Spinner className="size-4" />
+                <span>
+                  {isSignUp ? "Creating account..." : "Signing in..."}
+                </span>
+              </span>
+            ) : (
+              <>
+                <span>
+                  {isSignUp ? "Sign Up & Continue" : "Sign In & Continue"}
+                </span>
+                <ArrowRight className="size-4" />
+              </>
+            )}
           </Button>
 
           <p className="text-center text-xs text-muted-foreground pt-2">
             {isSignUp ? "Already have an account?" : "Don't have an account?"}{" "}
             <button
               type="button"
+              disabled={authLoading}
               onClick={handleToggleMode}
-              className="text-primary font-semibold hover:underline"
+              className="text-primary font-semibold hover:underline cursor-pointer"
             >
               {isSignUp ? "Sign In" : "Sign Up"}
             </button>

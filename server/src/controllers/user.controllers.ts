@@ -2,14 +2,9 @@ import type { Response, Request } from "express";
 import AsyncWrapper from "../utils/asyncWrapper";
 import pool from "../config/db";
 import bcrypt from "bcryptjs";
-import jwt, { JwtPayload } from "jsonwebtoken";
+import jwt from "jsonwebtoken";
 import ApiError from "../utils/ApiError";
-
-interface TokenPayload extends JwtPayload {
-  user_id: number;
-  email: string;
-  name: string;
-}
+import type { TokenPayload } from "../types/auth.types";
 
 const isProduction = process.env.NODE_ENV === "production";
 
@@ -83,14 +78,14 @@ const loginUser = AsyncWrapper(async (req: Request, res: Response) => {
 
   res.cookie("accessToken", accessToken, {
     httpOnly: true,
-    secure: true,
+    secure: isProduction,
     sameSite: "strict",
     maxAge: 15 * 60 * 1000,
   });
 
   res.cookie("refreshToken", refreshToken, {
     httpOnly: true,
-    secure: true,
+    secure: isProduction,
     sameSite: "strict",
     maxAge: 7 * 24 * 60 * 60 * 1000,
   });
@@ -188,4 +183,48 @@ const refreshToken = AsyncWrapper(async (req: Request, res: Response) => {
   });
 });
 
-export { getUser, loginUser, registerUser, refreshToken };
+const getProfile = AsyncWrapper(async (req: Request, res: Response) => {
+  return res.status(200).json({
+    success: true,
+    user: req.user,
+  });
+});
+
+const logoutUser = AsyncWrapper(async (req: Request, res: Response) => {
+  const incomingRefreshToken =
+    req.cookies?.refreshToken ||
+    req.body?.refreshToken ||
+    req.headers.authorization?.split(" ")[1];
+
+  if (incomingRefreshToken) {
+    await pool.query("DELETE FROM refresh_tokens WHERE token = $1", [
+      incomingRefreshToken,
+    ]);
+  }
+
+  res.clearCookie("accessToken", {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: "strict",
+  });
+
+  res.clearCookie("refreshToken", {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: "strict",
+  });
+
+  return res.status(200).json({
+    success: true,
+    message: "Logged out successfully",
+  });
+});
+
+export {
+  getUser,
+  loginUser,
+  registerUser,
+  refreshToken,
+  getProfile,
+  logoutUser,
+};
