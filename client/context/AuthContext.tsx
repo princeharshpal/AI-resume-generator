@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from "react";
 import type { User, AuthContextType } from "@/types";
-import { refreshTokenApi } from "@/services/apiServices";
+import { refreshTokenApi, logoutApi } from "@/services/apiServices";
 
 export type { User };
 
@@ -42,7 +42,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    const handleSessionExpired = () => {
+    const handleSessionExpired = async () => {
+      try {
+        await logoutApi();
+      } catch {}
+      if (typeof document !== "undefined") {
+        document.cookie =
+          "refreshToken=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+        document.cookie =
+          "accessToken=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+      }
       setUser(null);
       localStorage.removeItem("smartresume_user");
     };
@@ -82,7 +91,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setAuthenticatedUser(newUser);
   };
 
-  const logout = () => {
+  const logout = async () => {
+    try {
+      await logoutApi();
+    } catch {}
+    if (typeof document !== "undefined") {
+      document.cookie =
+        "refreshToken=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+      document.cookie =
+        "accessToken=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+    }
     setUser(null);
     localStorage.removeItem("smartresume_user");
   };

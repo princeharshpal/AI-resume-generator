@@ -20,31 +20,37 @@ import {
   FileCheck,
   CheckCircle2,
   AlertCircle,
-  Zap,
   Download,
   Copy,
   Plus,
   RefreshCw,
-  Sparkles,
   Check,
   X,
   Briefcase,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import { uploadResumeToGoogle, analyseResumeApi } from "@/services/apiServices";
-import type { UploadResumeData, ResumeAnalysisResult } from "@/types";
+import {
+  uploadResumeToGoogle,
+  analyseResumeApi,
+  generateTailoredResumeApi,
+  downloadAndSaveResumeApi,
+} from "@/services/apiServices";
+import type {
+  UploadResumeData,
+  ResumeAnalysisResult,
+  TailoredResumeContent,
+  DownloadResumePayload,
+} from "@/types";
 import { Spinner } from "@/components/ui/spinner";
+import { toast } from "@/components/ui/sonner";
 
-const SAMPLE_JOB_TITLE = "Full Stack Developer";
-const SAMPLE_JOB_DESCRIPTION = `We are seeking an experienced Full Stack Developer to join our core engineering team.
-
+const DEFAULT_TARGET_ROLE = "Target Role";
+const SAMPLE_JOB_TITLE = "Senior Software Engineer";
+const SAMPLE_JOB_DESCRIPTION = `We are looking for a Senior Software Engineer to join our core backend and platform engineering team.
 Responsibilities:
-- Build, optimize, and maintain scalable web services and REST APIs using Node.js, Express, and TypeScript.
-- Architect reliable relational databases using PostgreSQL and design performant schemas.
-- Collaborate with frontend teams to deliver responsive interfaces with React and Next.js.
-- Implement containerization with Docker and deploy services to AWS cloud infrastructure.
-- Build automated CI/CD pipelines to ensure seamless delivery and zero-downtime deployments.
-- Integrate Redis caching layers for high-throughput microservices.
+- Build high-throughput microservices and APIs.
+- Optimize database performance and implement caching strategies.
+- Collaborate with cross-functional teams to deliver scalable cloud solutions.
 
 Requirements:
 - 3+ years experience with TypeScript, Node.js, and Express.
@@ -74,15 +80,7 @@ export default function ResumeScanner() {
     useState<ResumeAnalysisResult | null>(null);
   const [analyzeError, setAnalyzeError] = useState<string | null>(null);
 
-  const [matchingSkills, setMatchingSkills] = useState<string[]>([
-    "TypeScript",
-    "Node.js",
-    "PostgreSQL",
-    "Express",
-    "REST APIs",
-    "React",
-    "Git",
-  ]);
+  const [matchingSkills, setMatchingSkills] = useState<string[]>([]);
 
   const formatFileSize = (bytes?: number) => {
     if (!bytes && bytes !== 0) return "";
@@ -98,6 +96,9 @@ export default function ResumeScanner() {
       const res = await uploadResumeToGoogle(fileToUpload);
       if (res?.success && res.data) {
         setUploadedResume(res.data);
+        toast.success("Resume uploaded successfully!", {
+          description: res.data.file_name,
+        });
       }
     } catch (err: unknown) {
       console.error("Resume upload error:", err);
@@ -124,17 +125,15 @@ export default function ResumeScanner() {
     }
   }, [resumeFile]);
 
-  const [missingSkills, setMissingSkills] = useState<string[]>([
-    "Docker",
-    "Redis",
-    "AWS",
-    "CI/CD Pipelines",
-    "Kubernetes",
-  ]);
+  const [missingSkills, setMissingSkills] = useState<string[]>([]);
 
-  const [showResumeModal, setShowResumeModal] = useState(false);
   const [copiedNotification, setCopiedNotification] = useState(false);
   const [downloadSuccess, setDownloadSuccess] = useState(false);
+  const [userAddedSkills, setUserAddedSkills] = useState<string[]>([]);
+  const [tailoredResume, setTailoredResume] =
+    useState<TailoredResumeContent | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   const wordCount = jobDescription
     .trim()
@@ -216,6 +215,9 @@ export default function ResumeScanner() {
           setMissingSkills(response.data.missing_skills);
         }
         setAnalysisCompleted(true);
+        toast.success("Resume analysis complete!", {
+          description: `ATS Match Score calculated: ${response.data.match_score ?? 0}%`,
+        });
         setTimeout(() => {
           const resultsElement = document.getElementById("analysis-results");
           if (resultsElement) {
@@ -246,20 +248,133 @@ export default function ResumeScanner() {
   const handleAddSkill = (skill: string) => {
     setMissingSkills((prev) => prev.filter((s) => s !== skill));
     setMatchingSkills((prev) => [...prev, skill]);
+    setUserAddedSkills((prev) =>
+      prev.includes(skill) ? prev : [...prev, skill],
+    );
+    toast.success(`Added ${skill} to your tailored resume!`, {
+      description:
+        "This skill will be injected into your generated ATS resume.",
+    });
   };
 
   const handleCopyTailored = () => {
-    navigator.clipboard
-      .writeText(`• Architected and deployed containerized Node.js & TypeScript microservices using Docker, streamlining CI/CD pipelines and cutting release cycle by 35%.
-• Integrated Redis caching layers with PostgreSQL database to handle 10,000+ req/sec with sub-50ms latency.
-• Provisioned cloud infrastructure on AWS (EC2, S3) with zero downtime deployments.`);
-    setCopiedNotification(true);
-    setTimeout(() => setCopiedNotification(false), 2500);
+    if (tailoredResume) {
+      const summary = tailoredResume.professional_summary;
+      const bullets = tailoredResume.experience
+        .flatMap((e) => e.bullet_points)
+        .map((b) => `• ${b}`)
+        .join("\n");
+      const skills = Object.entries(tailoredResume.skills_matrix)
+        .filter(([_, list]) => Array.isArray(list) && list.length > 0)
+        .map(
+          ([cat, list]) =>
+            `${cat.toUpperCase().replace("_", " ")}: ${(list as string[]).join(", ")}`,
+        )
+        .join("\n");
+
+      navigator.clipboard.writeText(
+        `${tailoredResume.personal_info.name}\n${tailoredResume.target_role}\n\nSUMMARY\n${summary}\n\nSKILLS\n${skills}\n\nEXPERIENCE\n${bullets}`,
+      );
+      setCopiedNotification(true);
+      toast.success("Copied to clipboard!", {
+        description: "Tailored resume text is ready to paste.",
+      });
+      setTimeout(() => setCopiedNotification(false), 2500);
+    } else {
+      toast.info("Please generate your ATS-tailored resume first to copy.");
+    }
   };
 
-  const handleDownloadPdf = () => {
-    setDownloadSuccess(true);
-    setTimeout(() => setDownloadSuccess(false), 3000);
+  const handleGenerateResume = async () => {
+    if (!uploadedResume) {
+      toast.error("Please upload your resume first before generating.");
+      return;
+    }
+
+    if (!jobDescription.trim()) {
+      toast.error(
+        "Please enter a job description to tailor your resume against.",
+      );
+      return;
+    }
+
+    try {
+      setIsGenerating(true);
+      const response = await generateTailoredResumeApi({
+        file_name: uploadedResume.file_name,
+        job_title: jobTitle.trim() || DEFAULT_TARGET_ROLE,
+        job_description: jobDescription.trim(),
+        added_skills: userAddedSkills,
+      });
+
+      if (response?.success && response.data) {
+        setTailoredResume(response.data);
+        toast.success("ATS-Optimized resume generated!", {
+          description: `Projected ATS match score: ${response.data.projected_match_score}%`,
+        });
+        setTimeout(() => {
+          document
+            .getElementById("tailored-resume-section")
+            ?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }, 150);
+      }
+    } catch (err: unknown) {
+      console.error("Generate resume error:", err);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleDownloadAndSave = async () => {
+    if (!isLoggedIn) {
+      openAuthModal(() => {
+        handleDownloadAndSave();
+      });
+      return;
+    }
+
+    try {
+      setIsDownloading(true);
+
+      const payload: DownloadResumePayload = {
+        file_name: uploadedResume?.file_name,
+        job_title:
+          jobTitle.trim() || tailoredResume?.target_role || DEFAULT_TARGET_ROLE,
+        company_name: "Target Company",
+        job_description: jobDescription.trim(),
+        match_score:
+          tailoredResume?.projected_match_score ||
+          analysisResult?.match_score ||
+          92,
+        matching_skills: matchingSkills,
+        missing_skills: missingSkills,
+        added_skills: userAddedSkills,
+        resume_content: tailoredResume || undefined,
+      };
+
+      const res = await downloadAndSaveResumeApi(payload);
+
+      if (res?.success && res.data?.pdf_url) {
+        setDownloadSuccess(true);
+
+        const link = document.createElement("a");
+        link.href = res.data.pdf_url;
+        link.target = "_blank";
+        link.download = `${(jobTitle || "Resume").replace(/\s+/g, "_")}_ATS_Optimized.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        toast.success("Resume downloaded & saved to cloud history!", {
+          description: "Permanently stored in your Scan History.",
+        });
+      }
+    } catch (err: unknown) {
+      console.error("Resume download & save error:", err);
+    } finally {
+      setIsDownloading(false);
+      setTimeout(() => setDownloadSuccess(false), 3000);
+    }
   };
 
   const onAnalyzeClick = () => {
@@ -495,7 +610,6 @@ export default function ResumeScanner() {
                 }}
                 className="text-xs text-primary hover:underline font-semibold flex items-center gap-1"
               >
-                <Sparkles className="size-3" />
                 Load Sample JD
               </button>
             </div>
@@ -579,7 +693,6 @@ export default function ResumeScanner() {
             </span>
           ) : (
             <span className="flex items-center gap-2.5">
-              <Zap className="size-5 fill-amber-300 text-amber-300 group-hover:scale-110 transition-transform" />
               Analyze & Match Resume
             </span>
           )}
@@ -587,7 +700,6 @@ export default function ResumeScanner() {
 
         {isAnalyzing && (
           <div className="mt-4 flex items-center gap-2 text-xs font-medium text-muted-foreground animate-pulse">
-            <Sparkles className="size-3.5 text-primary" />
             <span>{scanStepMessage}</span>
           </div>
         )}
@@ -684,7 +796,6 @@ export default function ResumeScanner() {
                   analysisResult.actionable_recommendations.length > 0 ? (
                     <div className="space-y-2.5">
                       <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                        <Sparkles className="size-3.5 text-amber-500" />
                         Actionable AI Recommendations
                       </span>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
@@ -734,7 +845,6 @@ export default function ResumeScanner() {
                   </div>
 
                   <div className="text-xs text-muted-foreground flex items-center gap-2 pt-2 border-t border-border/40">
-                    <Sparkles className="size-3.5 text-amber-500" />
                     <span>
                       <strong>ATS Recommendation:</strong> Adding 3 tailored
                       accomplishment statements will lift your score from{" "}
@@ -767,17 +877,24 @@ export default function ResumeScanner() {
                 </CardHeader>
 
                 <CardContent className="p-5">
-                  <div className="flex flex-wrap gap-2">
-                    {matchingSkills.map((skill) => (
-                      <span
-                        key={skill}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/25 shadow-2xs hover:bg-emerald-500/15 transition-colors"
-                      >
-                        <Check className="size-3.5 text-emerald-600 dark:text-emerald-400" />
-                        {skill}
-                      </span>
-                    ))}
-                  </div>
+                  {matchingSkills.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {matchingSkills.map((skill) => (
+                        <span
+                          key={skill}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/25 shadow-2xs hover:bg-emerald-500/15 transition-colors"
+                        >
+                          <Check className="size-3.5 text-emerald-600 dark:text-emerald-400" />
+                          {skill}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground italic">
+                      Matching skills from your resume will appear here once
+                      analyzed.
+                    </p>
+                  )}
                 </CardContent>
               </Card>
 
@@ -802,23 +919,30 @@ export default function ResumeScanner() {
                 </CardHeader>
 
                 <CardContent className="p-5">
-                  <div className="flex flex-wrap gap-2">
-                    {missingSkills.map((skill) => (
-                      <button
-                        key={skill}
-                        onClick={() => handleAddSkill(skill)}
-                        title={`Click to incorporate ${skill} into your tailored resume`}
-                        className="group inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-rose-500/10 hover:bg-rose-500/20 text-rose-700 dark:text-rose-400 border border-rose-500/25 transition-all active:scale-95"
-                      >
-                        <span className="size-1.5 rounded-full bg-rose-500 group-hover:hidden"></span>
-                        <Plus className="size-3 hidden group-hover:inline-block" />
-                        {skill}
-                        <span className="text-[10px] opacity-60 font-mono">
-                          +Add
-                        </span>
-                      </button>
-                    ))}
-                  </div>
+                  {missingSkills.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {missingSkills.map((skill) => (
+                        <button
+                          key={skill}
+                          onClick={() => handleAddSkill(skill)}
+                          title={`Click to incorporate ${skill} into your tailored resume`}
+                          className="group inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-rose-500/10 hover:bg-rose-500/20 text-rose-700 dark:text-rose-400 border border-rose-500/25 transition-all active:scale-95 cursor-pointer"
+                        >
+                          <span className="size-1.5 rounded-full bg-rose-500 group-hover:hidden"></span>
+                          <Plus className="size-3 hidden group-hover:inline-block" />
+                          {skill}
+                          <span className="text-[10px] opacity-60 font-mono">
+                            +Add
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground italic">
+                      Recommended skills from the job description will appear
+                      here after analysis.
+                    </p>
+                  )}
                 </CardContent>
               </Card>
             </div>
@@ -827,7 +951,6 @@ export default function ResumeScanner() {
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-base font-bold flex items-center gap-2">
-                    <Sparkles className="size-4 text-primary" />
                     ACTION CENTER:
                   </CardTitle>
                   <Badge variant="default" className="text-xs font-medium">
@@ -840,198 +963,421 @@ export default function ResumeScanner() {
                 </CardDescription>
               </CardHeader>
 
-              <CardContent className="p-5 pt-1 flex flex-col sm:flex-row items-center gap-4">
+              <CardContent className="p-5 pt-1 flex items-center">
                 <Button
                   size="lg"
-                  onClick={() => setShowResumeModal(true)}
-                  className="w-full sm:w-auto flex-1 h-12 rounded-xl text-sm font-bold gap-2.5 shadow-sm hover:shadow-md transition-all"
+                  disabled={isGenerating || !uploadedResume}
+                  onClick={handleGenerateResume}
+                  className="w-full h-12 rounded-xl text-sm font-bold gap-2.5 shadow-sm hover:shadow-md transition-all cursor-pointer"
                 >
-                  <FileText className="size-4" />
-                  Generate ATS-Optimized Resume
-                </Button>
-
-                <Button
-                  size="lg"
-                  variant="outline"
-                  onClick={handleDownloadPdf}
-                  className="w-full sm:w-auto flex-1 h-12 rounded-xl text-sm font-bold gap-2.5 border-primary/30 hover:bg-primary/5 transition-all"
-                >
-                  <Download className="size-4 text-primary" />
-                  {downloadSuccess
-                    ? "Downloaded Tailored PDF ✓"
-                    : "Download Tailored PDF"}
-                </Button>
-
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleCopyTailored}
-                  className="w-full sm:w-auto h-12 px-4 rounded-xl text-xs font-medium text-muted-foreground hover:text-foreground"
-                >
-                  {copiedNotification ? (
-                    <span className="flex items-center gap-1 text-emerald-500 font-semibold">
-                      <Check className="size-3.5" /> Copied!
-                    </span>
+                  {isGenerating ? (
+                    <>
+                      <Spinner className="size-4" />
+                      <span>Generating with AI...</span>
+                    </>
                   ) : (
-                    <span className="flex items-center gap-1">
-                      <Copy className="size-3.5" /> Copy Bullets
-                    </span>
+                    <>
+                      <FileText className="size-4" />
+                      <span>Generate ATS-Optimized Resume</span>
+                    </>
                   )}
                 </Button>
               </CardContent>
             </Card>
+
+            {/* Generated ATS Resume displayed directly beneath Action Center */}
+            {tailoredResume && (
+              <div
+                id="tailored-resume-section"
+                className="scroll-mt-24 space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-300"
+              >
+                <Card className="border-2 border-primary/30 shadow-xl bg-card overflow-hidden">
+                  <CardHeader className="p-6 border-b border-border bg-muted/30">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <Badge
+                            variant="default"
+                            className="text-xs font-semibold bg-emerald-600 text-white"
+                          >
+                            ATS-Optimized Resume
+                          </Badge>
+                          <span className="text-xs text-muted-foreground font-medium">
+                            Projected Match Score:{" "}
+                            <span className="text-emerald-500 font-bold">
+                              {tailoredResume.projected_match_score || 94}%
+                            </span>
+                          </span>
+                        </div>
+                        <h3 className="text-xl font-bold text-foreground">
+                          {tailoredResume.personal_info?.name
+                            ? `${tailoredResume.personal_info.name} — Generated Resume`
+                            : "Generated ATS Resume"}
+                        </h3>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Target Role:{" "}
+                          <strong>
+                            {tailoredResume.target_role ||
+                              jobTitle ||
+                              "Target Role"}
+                          </strong>
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleCopyTailored}
+                          className="text-xs gap-1.5 cursor-pointer h-9 px-3"
+                        >
+                          <Copy className="size-3.5" />
+                          {copiedNotification ? "Copied!" : "Copy Text"}
+                        </Button>
+
+                        <Button
+                          size="sm"
+                          disabled={isDownloading}
+                          onClick={handleDownloadAndSave}
+                          className="text-xs gap-1.5 cursor-pointer h-9 px-4 font-semibold"
+                        >
+                          {isDownloading ? (
+                            <>
+                              <Spinner className="size-3.5" />
+                              <span>Downloading...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Download className="size-3.5" />
+                              <span>Download Resume</span>
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  </CardHeader>
+
+                  <CardContent className="p-6 space-y-6 text-sm">
+                    {tailoredResume?.applied_added_skills &&
+                      tailoredResume.applied_added_skills.length > 0 && (
+                        <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-800 dark:text-emerald-300 flex items-start gap-2.5">
+                          <CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400 mt-0.5" />
+                          <div>
+                            <span className="font-bold block">
+                              User Added Skills Successfully Incorporated:
+                            </span>
+                            <div className="flex flex-wrap gap-1.5 mt-1.5">
+                              {tailoredResume.applied_added_skills.map((sk) => (
+                                <span
+                                  key={sk}
+                                  className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-800 dark:text-emerald-200 font-medium text-[11px]"
+                                >
+                                  +{sk}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                    {tailoredResume?.personal_info && (
+                      <div className="p-3 rounded-xl bg-muted/30 border border-border/60 text-xs text-muted-foreground flex flex-wrap items-center justify-center gap-3 text-center">
+                        {tailoredResume.personal_info.email && (
+                          <a
+                            href={`mailto:${tailoredResume.personal_info.email}`}
+                            className="hover:text-primary hover:underline transition-colors"
+                          >
+                            {tailoredResume.personal_info.email}
+                          </a>
+                        )}
+                        {tailoredResume.personal_info.phone && <span>•</span>}
+                        {tailoredResume.personal_info.phone && (
+                          <a
+                            href={`tel:${tailoredResume.personal_info.phone.replace(/[^\d+]/g, "")}`}
+                            className="hover:text-primary hover:underline transition-colors"
+                          >
+                            {tailoredResume.personal_info.phone}
+                          </a>
+                        )}
+                        {tailoredResume.personal_info.location && (
+                          <span>•</span>
+                        )}
+                        {tailoredResume.personal_info.location && (
+                          <span>{tailoredResume.personal_info.location}</span>
+                        )}
+                        {tailoredResume.personal_info.linkedin && (
+                          <span>•</span>
+                        )}
+                        {tailoredResume.personal_info.linkedin && (
+                          <a
+                            href={
+                              tailoredResume.personal_info.linkedin.startsWith(
+                                "http",
+                              )
+                                ? tailoredResume.personal_info.linkedin
+                                : `https://${tailoredResume.personal_info.linkedin}`
+                            }
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="hover:text-primary hover:underline transition-colors"
+                          >
+                            LinkedIn
+                          </a>
+                        )}
+                        {tailoredResume.personal_info.github && <span>•</span>}
+                        {tailoredResume.personal_info.github && (
+                          <a
+                            href={
+                              tailoredResume.personal_info.github.startsWith(
+                                "http",
+                              )
+                                ? tailoredResume.personal_info.github
+                                : `https://${tailoredResume.personal_info.github}`
+                            }
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="hover:text-primary hover:underline transition-colors"
+                          >
+                            GitHub
+                          </a>
+                        )}
+                        {tailoredResume.personal_info.portfolio && (
+                          <span>•</span>
+                        )}
+                        {tailoredResume.personal_info.portfolio && (
+                          <a
+                            href={
+                              tailoredResume.personal_info.portfolio.startsWith(
+                                "http",
+                              )
+                                ? tailoredResume.personal_info.portfolio
+                                : `https://${tailoredResume.personal_info.portfolio}`
+                            }
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="hover:text-primary hover:underline transition-colors"
+                          >
+                            Portfolio
+                          </a>
+                        )}
+                      </div>
+                    )}
+
+                    {tailoredResume?.professional_summary && (
+                      <div className="space-y-2">
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                          <FileText className="size-3.5" /> Tailored
+                          Professional Summary
+                        </h4>
+                        <div className="p-4 rounded-xl bg-muted/40 border border-border/80 text-xs leading-relaxed text-foreground">
+                          {tailoredResume.professional_summary}
+                        </div>
+                      </div>
+                    )}
+
+                    {tailoredResume?.experience &&
+                      tailoredResume.experience.length > 0 && (
+                        <div className="space-y-3">
+                          <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                            <CheckCircle2 className="size-3.5 text-emerald-500" />
+                            Optimized Experience (STAR Method & Added Skills
+                            Injected)
+                          </h4>
+
+                          <div className="space-y-3">
+                            {tailoredResume.experience.map((exp, idx) => (
+                              <div
+                                key={idx}
+                                className="p-4 rounded-xl bg-card border border-border space-y-2"
+                              >
+                                <div className="flex items-center justify-between">
+                                  <h5 className="font-bold text-sm text-foreground">
+                                    {exp.role}
+                                  </h5>
+                                  <span className="text-xs text-muted-foreground">
+                                    {exp.start_date} - {exp.end_date}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-muted-foreground font-medium">
+                                  {exp.company}
+                                  {exp.location ? ` • ${exp.location}` : ""}
+                                </p>
+                                <ul className="space-y-1.5 pt-1">
+                                  {exp.bullet_points.map((bullet, bIdx) => (
+                                    <li
+                                      key={bIdx}
+                                      className="text-xs text-foreground/90 leading-relaxed flex items-start gap-2"
+                                    >
+                                      <span className="text-emerald-500 font-bold shrink-0">
+                                        •
+                                      </span>
+                                      <span>{bullet}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                    {tailoredResume?.projects &&
+                      tailoredResume.projects.length > 0 && (
+                        <div className="space-y-2.5">
+                          <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                            Key Projects
+                          </h4>
+                          <div className="space-y-2.5">
+                            {tailoredResume.projects.map((proj, pIdx) => (
+                              <div
+                                key={pIdx}
+                                className="p-3.5 rounded-xl bg-card border border-border space-y-1.5"
+                              >
+                                <div className="flex items-center justify-between">
+                                  <h5 className="font-bold text-xs text-foreground">
+                                    {proj.name}
+                                  </h5>
+                                  {proj.technologies &&
+                                    proj.technologies.length > 0 && (
+                                      <span className="text-[11px] text-muted-foreground">
+                                        {proj.technologies.join(", ")}
+                                      </span>
+                                    )}
+                                </div>
+                                {proj.description && (
+                                  <p className="text-xs text-foreground/80">
+                                    {proj.description}
+                                  </p>
+                                )}
+                                {proj.bullet_points && (
+                                  <ul className="space-y-1">
+                                    {proj.bullet_points.map((b, bI) => (
+                                      <li
+                                        key={bI}
+                                        className="text-xs text-foreground/90 flex items-start gap-1.5"
+                                      >
+                                        <span className="text-emerald-500 font-bold">
+                                          •
+                                        </span>
+                                        <span>{b}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                    {tailoredResume?.education &&
+                      tailoredResume.education.length > 0 && (
+                        <div className="space-y-2">
+                          <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                            Education
+                          </h4>
+                          <div className="space-y-2">
+                            {tailoredResume.education.map((edu, eIdx) => (
+                              <div
+                                key={eIdx}
+                                className="p-3 rounded-xl bg-muted/30 border border-border/60 flex items-center justify-between text-xs"
+                              >
+                                <div>
+                                  <p className="font-bold text-foreground">
+                                    {edu.degree}
+                                    {edu.field_of_study
+                                      ? ` in ${edu.field_of_study}`
+                                      : ""}
+                                  </p>
+                                  <p className="text-muted-foreground">
+                                    {edu.institution}
+                                  </p>
+                                </div>
+                                {edu.graduation_year && (
+                                  <span className="text-muted-foreground font-mono">
+                                    {edu.graduation_year}
+                                  </span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                    <div className="space-y-2.5">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                        Updated Skills Matrix
+                      </h4>
+                      {tailoredResume?.skills_matrix ? (
+                        <div className="space-y-2">
+                          {Object.entries(tailoredResume.skills_matrix).map(
+                            ([category, skills]) =>
+                              skills && skills.length > 0 ? (
+                                <div
+                                  key={category}
+                                  className="flex flex-wrap items-center gap-1.5"
+                                >
+                                  <span className="text-[11px] font-bold text-muted-foreground uppercase min-w-[110px]">
+                                    {category.replace("_", " ")}:
+                                  </span>
+                                  {skills.map((skill) => (
+                                    <span
+                                      key={skill}
+                                      className="px-2 py-0.5 rounded-md text-[11px] font-medium bg-muted text-foreground border border-border/80"
+                                    >
+                                      {skill}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : null,
+                          )}
+                        </div>
+                      ) : null}
+                    </div>
+                  </CardContent>
+
+                  <div className="px-6 py-4 border-t border-border bg-muted/20 flex flex-col sm:flex-row items-center justify-between gap-3">
+                    <span className="text-xs text-muted-foreground">
+                      Ready to download as ATS-compliant PDF & permanently saved
+                      to your history
+                    </span>
+
+                    <div className="flex items-center gap-2 w-full sm:w-auto">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleCopyTailored}
+                        className="flex-1 sm:flex-none text-xs gap-1.5 cursor-pointer"
+                      >
+                        <Copy className="size-3.5" />
+                        {copiedNotification ? "Copied!" : "Copy Text"}
+                      </Button>
+
+                      <Button
+                        size="sm"
+                        disabled={isDownloading}
+                        onClick={handleDownloadAndSave}
+                        className="flex-1 sm:flex-none text-xs gap-1.5 cursor-pointer font-semibold"
+                      >
+                        {isDownloading ? (
+                          <>
+                            <Spinner className="size-3.5" />
+                            <span>Downloading...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Download className="size-3.5" />
+                            <span>Download Resume</span>
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                </Card>
+              </div>
+            )}
           </section>
         </>
-      )}
-
-      {showResumeModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-card border border-border max-w-3xl w-full rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-200">
-            <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-muted/30">
-              <div className="flex items-center gap-2.5">
-                <div className="size-8 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-                  <Sparkles className="size-4" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-foreground">
-                    ATS-Optimized Resume Preview
-                  </h3>
-                  <p className="text-xs text-muted-foreground">
-                    Tailored specifically for{" "}
-                    <strong>{jobTitle || "Full Stack Developer"}</strong> •
-                    Projected Score:{" "}
-                    <span className="text-emerald-500 font-bold">94%</span>
-                  </p>
-                </div>
-              </div>
-
-              <button
-                onClick={() => setShowResumeModal(false)}
-                className="size-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted flex items-center justify-center transition-colors"
-              >
-                <X className="size-4" />
-              </button>
-            </div>
-
-            <div className="p-6 overflow-y-auto space-y-6 text-sm">
-              <div className="space-y-2">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-                  <FileText className="size-3.5" /> Tailored Professional
-                  Summary
-                </h4>
-                <div className="p-4 rounded-xl bg-muted/40 border border-border/80 text-xs leading-relaxed text-foreground">
-                  Results-oriented <strong>Full Stack Developer</strong> with 4+
-                  years of hands-on experience architecting scalable distributed
-                  systems using <strong>Node.js</strong>,{" "}
-                  <strong>Express</strong>, and <strong>TypeScript</strong>.
-                  Proven track record managing relational{" "}
-                  <strong>PostgreSQL</strong> databases, implementing{" "}
-                  <strong>Docker</strong> containerization, and establishing
-                  robust <strong>CI/CD pipelines</strong> on{" "}
-                  <strong>AWS</strong>. Adept at leveraging{" "}
-                  <strong>Redis</strong> caching layers to optimize application
-                  response times by over 40%.
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-                  <CheckCircle2 className="size-3.5 text-emerald-500" />
-                  Optimized Experience Bullets (Keywords Injected)
-                </h4>
-
-                <div className="space-y-2.5">
-                  <div className="p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/20 text-xs text-foreground leading-relaxed">
-                    <span className="font-bold text-emerald-600 dark:text-emerald-400 block mb-1">
-                      + Added Missing Keywords (Docker & CI/CD):
-                    </span>
-                    &bull; Spearheaded migration of core backend microservices
-                    to <strong>Docker</strong> containers and integrated
-                    automated <strong>CI/CD pipelines</strong>, cutting release
-                    deployment cycles by 35%.
-                  </div>
-
-                  <div className="p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/20 text-xs text-foreground leading-relaxed">
-                    <span className="font-bold text-emerald-600 dark:text-emerald-400 block mb-1">
-                      + Added Missing Keywords (Redis & PostgreSQL):
-                    </span>
-                    &bull; Implemented <strong>Redis</strong> distributed
-                    caching layer alongside <strong>PostgreSQL</strong> query
-                    optimization, serving 10M+ daily requests with sub-50ms
-                    latency.
-                  </div>
-
-                  <div className="p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/20 text-xs text-foreground leading-relaxed">
-                    <span className="font-bold text-emerald-600 dark:text-emerald-400 block mb-1">
-                      + Added Missing Keywords (AWS Infrastructure):
-                    </span>
-                    &bull; Architected and monitored cloud infrastructure on{" "}
-                    <strong>AWS (EC2, S3)</strong> with auto-scaling policies,
-                    ensuring 99.98% service uptime.
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  Updated Technical Skills Matrix
-                </h4>
-                <div className="flex flex-wrap gap-1.5">
-                  {[
-                    "TypeScript",
-                    "Node.js",
-                    "PostgreSQL",
-                    "Express",
-                    "React",
-                    "Docker",
-                    "Redis",
-                    "AWS",
-                    "CI/CD Pipelines",
-                    "REST APIs",
-                    "Git",
-                  ].map((sk) => (
-                    <span
-                      key={sk}
-                      className="px-2.5 py-1 rounded-lg text-xs font-medium bg-muted text-foreground border border-border/80"
-                    >
-                      {sk}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="px-6 py-4 border-t border-border bg-muted/20 flex flex-col sm:flex-row items-center justify-between gap-3">
-              <span className="text-xs text-muted-foreground">
-                Ready to submit to recruiters and job portals
-              </span>
-
-              <div className="flex items-center gap-2 w-full sm:w-auto">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleCopyTailored}
-                  className="flex-1 sm:flex-none text-xs gap-1.5"
-                >
-                  <Copy className="size-3.5" />
-                  {copiedNotification ? "Copied!" : "Copy Text"}
-                </Button>
-
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    handleDownloadPdf();
-                    setShowResumeModal(false);
-                  }}
-                  className="flex-1 sm:flex-none text-xs gap-1.5"
-                >
-                  <Download className="size-3.5" />
-                  Download PDF
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
       )}
     </>
   );

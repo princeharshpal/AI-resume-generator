@@ -8,12 +8,6 @@ import type { TokenPayload } from "../types/auth.types";
 
 const isProduction = process.env.NODE_ENV === "production";
 
-const getUser = AsyncWrapper(async (req: Request, res: Response) => {
-  const query = "SELECT * FROM users";
-  const rows = await pool.query(query);
-  res.json(rows);
-});
-
 const registerUser = AsyncWrapper(async (req: Request, res: Response) => {
   const { name, email, password } = req.body;
 
@@ -25,8 +19,8 @@ const registerUser = AsyncWrapper(async (req: Request, res: Response) => {
 
   const hashedPassword = await bcrypt.hash(password, 10);
 
-  const rows = await pool.query(
-    "INSERT INTO users (name, email, password) VALUES ($1, $2, $3) RETURNING *",
+  await pool.query(
+    "INSERT INTO users (name, email, password) VALUES ($1, $2, $3)",
     [name, email, hashedPassword],
   );
 
@@ -81,6 +75,7 @@ const loginUser = AsyncWrapper(async (req: Request, res: Response) => {
     secure: isProduction,
     sameSite: "strict",
     maxAge: 15 * 60 * 1000,
+    path: "/",
   });
 
   res.cookie("refreshToken", refreshToken, {
@@ -88,6 +83,7 @@ const loginUser = AsyncWrapper(async (req: Request, res: Response) => {
     secure: isProduction,
     sameSite: "strict",
     maxAge: 7 * 24 * 60 * 60 * 1000,
+    path: "/",
   });
 
   const { password: _, ...userWithOutPassword } = user.rows[0];
@@ -105,7 +101,21 @@ const refreshToken = AsyncWrapper(async (req: Request, res: Response) => {
     req.body?.refreshToken ||
     req.headers.authorization?.split(" ")[1];
 
-  if (!incomingRefreshToken) throw new ApiError(401, "Unauthorized request");
+  if (!incomingRefreshToken) {
+    res.clearCookie("accessToken", {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: "strict",
+      path: "/",
+    });
+    res.clearCookie("refreshToken", {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: "strict",
+      path: "/",
+    });
+    throw new ApiError(401, "Unauthorized request");
+  }
 
   let decoded: TokenPayload;
   try {
@@ -114,6 +124,21 @@ const refreshToken = AsyncWrapper(async (req: Request, res: Response) => {
       process.env.JWT_REFRESH_SECRET as string,
     ) as TokenPayload;
   } catch (error) {
+    await pool.query("DELETE FROM refresh_tokens WHERE token = $1", [
+      incomingRefreshToken,
+    ]);
+    res.clearCookie("accessToken", {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: "strict",
+      path: "/",
+    });
+    res.clearCookie("refreshToken", {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: "strict",
+      path: "/",
+    });
     throw new ApiError(401, "Invalid or expired refresh token");
   }
 
@@ -125,6 +150,18 @@ const refreshToken = AsyncWrapper(async (req: Request, res: Response) => {
   );
 
   if (isTokenValid.rows.length === 0) {
+    res.clearCookie("accessToken", {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: "strict",
+      path: "/",
+    });
+    res.clearCookie("refreshToken", {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: "strict",
+      path: "/",
+    });
     throw new ApiError(401, "Invalid refresh token or session expired");
   }
 
@@ -166,6 +203,7 @@ const refreshToken = AsyncWrapper(async (req: Request, res: Response) => {
     secure: isProduction,
     sameSite: "strict",
     maxAge: 15 * 60 * 1000,
+    path: "/",
   });
 
   res.cookie("refreshToken", newRefreshToken, {
@@ -173,6 +211,7 @@ const refreshToken = AsyncWrapper(async (req: Request, res: Response) => {
     secure: isProduction,
     sameSite: "strict",
     maxAge: 7 * 24 * 60 * 60 * 1000,
+    path: "/",
   });
 
   return res.status(200).json({
@@ -194,7 +233,9 @@ const logoutUser = AsyncWrapper(async (req: Request, res: Response) => {
   const incomingRefreshToken =
     req.cookies?.refreshToken ||
     req.body?.refreshToken ||
-    req.headers.authorization?.split(" ")[1];
+    (req.headers.authorization?.startsWith("Bearer ")
+      ? req.headers.authorization.substring(7)
+      : req.headers.authorization);
 
   if (incomingRefreshToken) {
     await pool.query("DELETE FROM refresh_tokens WHERE token = $1", [
@@ -202,16 +243,35 @@ const logoutUser = AsyncWrapper(async (req: Request, res: Response) => {
     ]);
   }
 
+  const incomingAccessToken =
+    req.cookies?.accessToken ||
+    (req.headers.authorization?.startsWith("Bearer ")
+      ? req.headers.authorization.substring(7)
+      : null);
+
+  if (incomingAccessToken) {
+    try {
+      const decoded = jwt.decode(incomingAccessToken) as TokenPayload | null;
+      if (decoded?.user_id && !incomingRefreshToken) {
+        await pool.query("DELETE FROM refresh_tokens WHERE user_id = $1", [
+          decoded.user_id,
+        ]);
+      }
+    } catch {}
+  }
+
   res.clearCookie("accessToken", {
     httpOnly: true,
     secure: isProduction,
     sameSite: "strict",
+    path: "/",
   });
 
   res.clearCookie("refreshToken", {
     httpOnly: true,
     secure: isProduction,
     sameSite: "strict",
+    path: "/",
   });
 
   return res.status(200).json({
@@ -220,11 +280,4 @@ const logoutUser = AsyncWrapper(async (req: Request, res: Response) => {
   });
 });
 
-export {
-  getUser,
-  loginUser,
-  registerUser,
-  refreshToken,
-  getProfile,
-  logoutUser,
-};
+export { loginUser, registerUser, refreshToken, getProfile, logoutUser };

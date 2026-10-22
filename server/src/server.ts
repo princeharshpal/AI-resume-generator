@@ -4,7 +4,7 @@ dotenv.config();
 import app from "./app.js";
 import cluster from "cluster";
 import os from "os";
-import connectDB from "./config/db";
+import connectDB, { initDB } from "./config/db";
 
 const PORT = process.env.PORT || 5000;
 
@@ -20,8 +20,9 @@ if (cluster.isPrimary) {
 
 connectDB
   .connect()
-  .then(() => {
+  .then(async () => {
     console.log("DB connected!");
+    await initDB();
 
     app.listen(PORT, () => {
       console.log(`Server running on ${PORT}`);

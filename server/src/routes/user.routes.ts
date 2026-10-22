@@ -1,6 +1,5 @@
 import { Router } from "express";
 import {
-  getUser,
   loginUser,
   registerUser,
   refreshToken,
@@ -9,6 +8,7 @@ import {
 } from "../controllers/user.controllers";
 import { validate } from "../middlewares/validator.middleware";
 import { authenticate } from "../middlewares/auth.middleware";
+import { authRateLimiter } from "../middlewares/rateLimiter.middleware";
 import {
   registerSchema,
   loginSchema,
@@ -17,12 +17,16 @@ import {
 
 const router = Router();
 
-router.post("/login", validate(loginSchema), loginUser);
-router.post("/register", validate(registerSchema), registerUser);
+router.post("/login", authRateLimiter, validate(loginSchema), loginUser);
+router.post(
+  "/register",
+  authRateLimiter,
+  validate(registerSchema),
+  registerUser,
+);
 router.post("/refresh-token", validate(refreshTokenSchema), refreshToken);
 
-router.get("/", authenticate, getUser);
 router.get("/me", authenticate, getProfile);
-router.post("/logout", authenticate, logoutUser);
+router.post("/logout", logoutUser);
 
 export default router;

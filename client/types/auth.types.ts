@@ -51,7 +51,7 @@ export interface AuthContextType {
   isLoggedIn: boolean;
   login: (emailOrUser?: string | User, name?: string) => void;
   setAuthenticatedUser: (user: User) => void;
-  logout: () => void;
+  logout: () => void | Promise<void>;
   isAuthModalOpen: boolean;
   openAuthModal: (callback?: () => void) => void;
   closeAuthModal: () => void;

@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { Sparkles } from "lucide-react";
 import ResumeScanner from "@/components/ResumeScanner";
 
 export const metadata: Metadata = {
@@ -13,7 +12,6 @@ export default function Page() {
     <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
       <div className="mb-10 text-left">
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-primary text-xs font-semibold mb-4">
-          <Sparkles className="size-3.5" />
           AI ATS Resume Scanner v2.0
         </div>
 

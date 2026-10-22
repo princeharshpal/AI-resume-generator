@@ -19,6 +19,7 @@ import { loginApi, registerApi } from "@/services/apiServices";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
+import { toast } from "@/components/ui/sonner";
 
 const authSchema = z.object({
   name: z.string().optional(),
@@ -84,7 +85,6 @@ export default function AuthModal() {
           password: data.password,
         });
 
-        // Automatically log the user in after successful registration
         const loginRes = await loginApi({
           email: data.email.trim(),
           password: data.password,
@@ -96,9 +96,13 @@ export default function AuthModal() {
             name: loginRes.user.name,
             email: loginRes.user.email,
           });
+          toast.success("Account created successfully!", {
+            description: `Welcome to SmartResume, ${loginRes.user.name}!`,
+          });
           reset();
         } else {
           setSuccessMessage("Account created successfully! Please sign in.");
+          toast.success("Account created successfully! Please sign in.");
           setIsSignUp(false);
         }
       } else {
@@ -112,6 +116,9 @@ export default function AuthModal() {
             id: loginRes.user.id,
             name: loginRes.user.name,
             email: loginRes.user.email,
+          });
+          toast.success("Signed in successfully!", {
+            description: `Welcome back, ${loginRes.user.name}!`,
           });
           reset();
         } else {

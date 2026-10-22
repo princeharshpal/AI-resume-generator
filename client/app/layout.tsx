@@ -5,7 +5,9 @@ import { cn } from "@/lib/utils";
 import Header from "@/components/Header";
 import { AuthProvider } from "@/context/AuthContext";
 import AuthModal from "@/components/AuthModal";
-import { Toaster } from "@/components/ui/toast";
+import { Toaster } from "@/components/ui/sonner";
+
+import Footer from "@/components/Footer";
 
 const figtree = Figtree({ subsets: ["latin"], variable: "--font-sans" });
 
@@ -20,9 +22,22 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SmartResume AI - Tailor Your Resume for Your Dream Job",
+  title: {
+    default: "SmartResume AI | ATS Resume Scanner & Optimizer",
+    template: "%s | SmartResume AI",
+  },
   description:
-    "Get instant ATS score, missing skills analysis, and a customized resume for full stack developer roles.",
+    "Instantly evaluate your ATS score, uncover missing skills, and generate tailored ATS-optimized resumes designed to pass recruiter screens.",
+  icons: {
+    icon: "/favicon.ico",
+  },
+  keywords: [
+    "ATS resume scanner",
+    "resume optimizer",
+    "ATS match score",
+    "tailored resume builder",
+    "job description keyword matcher",
+  ],
 };
 
 export default function RootLayout({
@@ -43,9 +58,10 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col antialiased selection:bg-primary/20 selection:text-primary">
         <AuthProvider>
           <Header />
-          <div className="flex-1 bg-gradient-to-b from-background via-background to-muted/20 text-foreground pb-20">
+          <div className="flex-1 bg-gradient-to-b from-background via-background to-muted/20 text-foreground pb-12">
             {children}
           </div>
+          <Footer />
           <AuthModal />
           <Toaster />
         </AuthProvider>
