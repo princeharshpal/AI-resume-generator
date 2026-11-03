@@ -10,6 +10,8 @@ import {
 } from "../config/gemini";
 import { generateAtsResumePdf } from "../utils/pdfGenerator";
 import type { TailoredResumeContent } from "../types/resume.types";
+import redisClient from "../config/redis";
+import crypto from "crypto";
 
 const uploadPdfToCloudinary = async (
   buffer: Buffer,
@@ -51,21 +53,48 @@ const uploadPdfToCloudinary = async (
 const analyseResume = AsyncWrapper(async (req: Request, res: Response) => {
   const { file_name, job_title, job_description } = req.body;
 
+  const fingerprint = crypto
+    .createHash("sha256")
+    .update(`${file_name}::${job_title}::${job_description}`)
+    .digest("hex");
+
+  const cacheKey = `resume:analysis:${fingerprint}`;
+
+  const cachedResult = await redisClient.get(cacheKey);
+
+  if (cachedResult) {
+    return res.status(200).json({
+      success: true,
+      message: "Resume analysis completed successfully",
+      data: JSON.parse(cachedResult),
+    });
+  }
+
   const fileRef = await ai.files.get({ name: file_name });
 
-  const response = await analyseResumeFromGemini(
+  const aiAnalysis = await analyseResumeFromGemini(
     fileRef,
     job_title,
     job_description,
   );
 
-  const rawText = response?.text;
+  const rawText = aiAnalysis?.text;
 
   if (!rawText) {
-    throw new ApiError(500, "Gemini AI returned empty response for resume analysis.");
+    throw new ApiError(
+      500,
+      "Gemini AI returned empty response for resume analysis.",
+    );
   }
 
   const structuredAnalysis = JSON.parse(rawText);
+
+  await redisClient.set(
+    cacheKey,
+    JSON.stringify(structuredAnalysis),
+    "EX",
+    86400,
+  );
 
   return res.status(200).json({
     success: true,
@@ -74,81 +103,103 @@ const analyseResume = AsyncWrapper(async (req: Request, res: Response) => {
   });
 });
 
-const generateTailoredResume = AsyncWrapper(async (req: Request, res: Response) => {
-  const { file_name, job_title, job_description, added_skills = [] } = req.body;
+const generateTailoredResume = AsyncWrapper(
+  async (req: Request, res: Response) => {
+    const {
+      file_name,
+      job_title,
+      job_description,
+      added_skills = [],
+    } = req.body;
 
-  const fileRef = await ai.files.get({ name: file_name });
-
-  const response = await generateTailoredResumeFromGemini(
-    fileRef,
-    job_title,
-    job_description,
-    added_skills,
-  );
-
-  const rawText = response?.text;
-
-  if (!rawText) {
-    throw new ApiError(500, "Failed to generate tailored ATS resume content.");
-  }
-
-  const tailoredResume: TailoredResumeContent = JSON.parse(rawText);
-
-  return res.status(200).json({
-    success: true,
-    message: "ATS-optimized tailored resume generated successfully",
-    data: tailoredResume,
-  });
-});
-
-const downloadAndSaveResume = AsyncWrapper(async (req: Request, res: Response) => {
-  const user = req.user;
-  if (!user) {
-    throw ApiError.unauthorized("You must be logged in to save and download tailored resumes.");
-  }
-
-  const {
-    file_name,
-    job_title,
-    company_name = "Target Company",
-    job_description = "",
-    match_score = 90,
-    matching_skills = [],
-    missing_skills = [],
-    added_skills = [],
-    resume_content,
-  } = req.body;
-
-  let finalResumeContent: TailoredResumeContent = resume_content;
-
-  if (!finalResumeContent) {
-    if (!file_name) {
-      throw new ApiError(400, "Either resume_content or file_name is required.");
-    }
     const fileRef = await ai.files.get({ name: file_name });
+
     const response = await generateTailoredResumeFromGemini(
       fileRef,
       job_title,
       job_description,
       added_skills,
     );
+
     const rawText = response?.text;
+
     if (!rawText) {
-      throw new ApiError(500, "Failed to generate resume for download.");
+      throw new ApiError(
+        500,
+        "Failed to generate tailored ATS resume content.",
+      );
     }
-    finalResumeContent = JSON.parse(rawText);
-  }
 
-  const pdfBuffer = await generateAtsResumePdf(finalResumeContent);
+    const tailoredResume: TailoredResumeContent = JSON.parse(rawText);
 
-  const safeTitle = (job_title || "Resume").toLowerCase().replace(/[^a-z0-9]/g, "_");
-  const timestamp = Date.now();
-  const publicId = `${safeTitle}_${timestamp}`;
-  const folder = `smartresume/users/${user.id}/resumes`;
+    return res.status(200).json({
+      success: true,
+      message: "ATS-optimized tailored resume generated successfully",
+      data: tailoredResume,
+    });
+  },
+);
 
-  const uploadResult = await uploadPdfToCloudinary(pdfBuffer, folder, publicId);
+const downloadAndSaveResume = AsyncWrapper(
+  async (req: Request, res: Response) => {
+    const user = req.user;
+    if (!user) {
+      throw ApiError.unauthorized(
+        "You must be logged in to save and download tailored resumes.",
+      );
+    }
 
-  const insertQuery = `
+    const {
+      file_name,
+      job_title,
+      company_name = "Target Company",
+      job_description = "",
+      match_score = 90,
+      matching_skills = [],
+      missing_skills = [],
+      added_skills = [],
+      resume_content,
+    } = req.body;
+
+    let finalResumeContent: TailoredResumeContent = resume_content;
+
+    if (!finalResumeContent) {
+      if (!file_name) {
+        throw new ApiError(
+          400,
+          "Either resume_content or file_name is required.",
+        );
+      }
+      const fileRef = await ai.files.get({ name: file_name });
+      const response = await generateTailoredResumeFromGemini(
+        fileRef,
+        job_title,
+        job_description,
+        added_skills,
+      );
+      const rawText = response?.text;
+      if (!rawText) {
+        throw new ApiError(500, "Failed to generate resume for download.");
+      }
+      finalResumeContent = JSON.parse(rawText);
+    }
+
+    const pdfBuffer = await generateAtsResumePdf(finalResumeContent);
+
+    const safeTitle = (job_title || "Resume")
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, "_");
+    const timestamp = Date.now();
+    const publicId = `${safeTitle}_${timestamp}`;
+    const folder = `smartresume/users/${user.id}/resumes`;
+
+    const uploadResult = await uploadPdfToCloudinary(
+      pdfBuffer,
+      folder,
+      publicId,
+    );
+
+    const insertQuery = `
     INSERT INTO resumes (
       user_id,
       job_title,
@@ -165,53 +216,57 @@ const downloadAndSaveResume = AsyncWrapper(async (req: Request, res: Response) =
     RETURNING *;
   `;
 
-  const dbResult = await pool.query(insertQuery, [
-    user.id,
-    job_title,
-    company_name,
-    job_description,
-    finalResumeContent.projected_match_score || match_score,
-    matching_skills,
-    missing_skills,
-    added_skills,
-    JSON.stringify(finalResumeContent),
-    uploadResult.secure_url,
-    uploadResult.public_id,
-  ]);
+    const dbResult = await pool.query(insertQuery, [
+      user.id,
+      job_title,
+      company_name,
+      job_description,
+      finalResumeContent.projected_match_score || match_score,
+      matching_skills,
+      missing_skills,
+      added_skills,
+      JSON.stringify(finalResumeContent),
+      uploadResult.secure_url,
+      uploadResult.public_id,
+    ]);
 
-  const savedRecord = dbResult.rows[0];
+    const savedRecord = dbResult.rows[0];
 
-  if (req.query.format === "pdf") {
-    res.setHeader("Content-Type", "application/pdf");
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="${user.name.replace(/\s+/g, "_")}_${safeTitle}.pdf"`,
-    );
-    res.setHeader("Content-Length", pdfBuffer.length);
-    res.setHeader("X-Resume-Id", savedRecord.id.toString());
-    res.setHeader("X-Cloud-Url", uploadResult.secure_url);
-    return res.end(pdfBuffer);
-  }
+    if (req.query.format === "pdf") {
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${user.name.replace(/\s+/g, "_")}_${safeTitle}.pdf"`,
+      );
+      res.setHeader("Content-Length", pdfBuffer.length);
+      res.setHeader("X-Resume-Id", savedRecord.id.toString());
+      res.setHeader("X-Cloud-Url", uploadResult.secure_url);
+      return res.end(pdfBuffer);
+    }
 
-  return res.status(200).json({
-    success: true,
-    message: "Resume generated, uploaded to cloud, and saved to history successfully",
-    data: {
-      id: savedRecord.id,
-      pdf_url: uploadResult.secure_url,
-      cloudinary_public_id: uploadResult.public_id,
-      job_title: savedRecord.job_title,
-      match_score: savedRecord.match_score,
-      created_at: savedRecord.created_at,
-      record: savedRecord,
-    },
-  });
-});
+    return res.status(200).json({
+      success: true,
+      message:
+        "Resume generated, uploaded to cloud, and saved to history successfully",
+      data: {
+        id: savedRecord.id,
+        pdf_url: uploadResult.secure_url,
+        cloudinary_public_id: uploadResult.public_id,
+        job_title: savedRecord.job_title,
+        match_score: savedRecord.match_score,
+        created_at: savedRecord.created_at,
+        record: savedRecord,
+      },
+    });
+  },
+);
 
 const getResumeHistory = AsyncWrapper(async (req: Request, res: Response) => {
   const user = req.user;
   if (!user) {
-    throw ApiError.unauthorized("Authentication required to view resume history");
+    throw ApiError.unauthorized(
+      "Authentication required to view resume history",
+    );
   }
 
   const query = `
@@ -261,38 +316,44 @@ const getResumeById = AsyncWrapper(async (req: Request, res: Response) => {
   });
 });
 
-const deleteResumeHistory = AsyncWrapper(async (req: Request, res: Response) => {
-  const user = req.user;
-  const resumeId = req.params.id;
+const deleteResumeHistory = AsyncWrapper(
+  async (req: Request, res: Response) => {
+    const user = req.user;
+    const resumeId = req.params.id;
 
-  if (!user) {
-    throw ApiError.unauthorized("Authentication required");
-  }
-
-  const selectQuery = "SELECT cloudinary_public_id FROM resumes WHERE id = $1 AND user_id = $2";
-  const selectResult = await pool.query(selectQuery, [resumeId, user.id]);
-
-  if (selectResult.rows.length === 0) {
-    throw ApiError.notFound("Resume record not found");
-  }
-
-  const publicId = selectResult.rows[0].cloudinary_public_id;
-
-  await pool.query("DELETE FROM resumes WHERE id = $1 AND user_id = $2", [resumeId, user.id]);
-
-  if (publicId) {
-    try {
-      await cloudinary.uploader.destroy(publicId, { resource_type: "raw" });
-    } catch (cloudErr) {
-      console.warn("Failed to delete Cloudinary file:", cloudErr);
+    if (!user) {
+      throw ApiError.unauthorized("Authentication required");
     }
-  }
 
-  return res.status(200).json({
-    success: true,
-    message: "Resume history deleted successfully",
-  });
-});
+    const selectQuery =
+      "SELECT cloudinary_public_id FROM resumes WHERE id = $1 AND user_id = $2";
+    const selectResult = await pool.query(selectQuery, [resumeId, user.id]);
+
+    if (selectResult.rows.length === 0) {
+      throw ApiError.notFound("Resume record not found");
+    }
+
+    const publicId = selectResult.rows[0].cloudinary_public_id;
+
+    await pool.query("DELETE FROM resumes WHERE id = $1 AND user_id = $2", [
+      resumeId,
+      user.id,
+    ]);
+
+    if (publicId) {
+      try {
+        await cloudinary.uploader.destroy(publicId, { resource_type: "raw" });
+      } catch (cloudErr) {
+        console.warn("Failed to delete Cloudinary file:", cloudErr);
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Resume history deleted successfully",
+    });
+  },
+);
 
 export {
   analyseResume,
