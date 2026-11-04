@@ -8,7 +8,7 @@ import {
   deleteResumeHistory,
 } from "../controllers/resume.controllers";
 import { validate } from "../middlewares/validator.middleware";
-import { authenticate } from "../middlewares/auth.middleware";
+import authenticate from "../middlewares/auth.middleware";
 import {
   resumeAnalyseSchema,
   generateResumeSchema,
@@ -17,11 +17,12 @@ import {
 
 const router = Router();
 
+router.use(authenticate);
+
 router.post("/analyse", validate(resumeAnalyseSchema), analyseResume);
 
 router.post(
   "/generate",
-  authenticate,
   validate(generateResumeSchema),
   generateTailoredResume,
 );
@@ -33,10 +34,10 @@ router.post(
   downloadAndSaveResume,
 );
 
-router.get("/history", authenticate, getResumeHistory);
+router.get("/history", getResumeHistory);
 
-router.get("/:id", authenticate, getResumeById);
+router.get("/:id", getResumeById);
 
-router.delete("/:id", authenticate, deleteResumeHistory);
+router.delete("/:id", deleteResumeHistory);
 
 export default router;

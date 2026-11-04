@@ -7,7 +7,7 @@ import {
   logoutUser,
 } from "../controllers/user.controllers";
 import { validate } from "../middlewares/validator.middleware";
-import { authenticate } from "../middlewares/auth.middleware";
+import authenticate from "../middlewares/auth.middleware";
 import { authRateLimiter } from "../middlewares/rateLimiter.middleware";
 import {
   registerSchema,
